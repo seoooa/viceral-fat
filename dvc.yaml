@@ -1,0 +1,24 @@
+metrics:
+- result/SegResNet/fold_1/metrics.json
+- result/SegResNet/fold_1/metrics.json
+- result/SegResNet/fold_1/metrics.json
+- result/SegResNet/fold_1/metrics.json
+- result/SegResNet/fold_1/metrics.json
+- result/SegResNet/fold_1/metrics.json
+plots:
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+- result/SegResNet/fold_1/plots/metrics:
+    x: step
+artifacts:
+  best:
+    path: result/SegResNet/fold_1/artifacts/epoch=1-step=44.ckpt
+    type: model

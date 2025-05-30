@@ -200,7 +200,7 @@ class ViceralFatSegmentModel(pytorch_lightning.LightningModule):
         labels = [self.post_label(i) for i in decollate_batch(labels)]
         
         filename = batch["image"].meta["filename_or_obj"][0]
-        patient_id = filename.split("/")[-2]  # Gets patient id (ex. 25) from the path
+        patient_id = filename.split("\\")[-2]  # Gets patient id (ex. 00293921) from the path
         
         # Save result
         self.save_result(
