@@ -405,7 +405,7 @@ def main(
         accumulate_grad_batches=5,
         precision="bf16-mixed",
         check_val_every_n_epoch=check_val_every_n_epoch,
-        num_sanity_val_steps=1,
+        num_sanity_val_steps=0,
         callbacks=callbacks,
         default_root_dir=log_dir,
     )
