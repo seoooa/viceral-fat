@@ -20,6 +20,7 @@ import SimpleITK as sitk
 import torch
 import lightning.pytorch as pl
 from pathlib import Path
+import yaml
 
 def create_distance_map(binary_mask):
     """
@@ -65,15 +66,16 @@ def ConvertDistanceMap(data):
     data["seg"] = distance_map
     return data
 
-class CoronaryArteryDataModule(pl.LightningDataModule):
+class ViceralFatDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        data_dir: str = "data/imageCAS_heart",
+        data_dir: str = "data/KU-PET-CT",
         batch_size: int = 4,
         patch_size: tuple = (96, 96, 96),
         num_workers: int = 4, 
-        cache_rate: float = 0.05,
-        use_distance_map: bool = False
+        cache_rate: float = 0.1,
+        use_distance_map: bool = False,
+        fold_number: int = 1
     ):
         super().__init__()
         self.data_dir = Path(data_dir)
@@ -85,27 +87,49 @@ class CoronaryArteryDataModule(pl.LightningDataModule):
         self.train_ds = None
         self.val_ds = None
         self.test_ds = None
-        
-    def load_data_splits(self, split: str):
-        split_dir = self.data_dir / split
-        cases = sorted(os.listdir(split_dir))
-        
-        data_files = []
-        for case in cases:
-            case_dir = split_dir / case
+        self.fold_number = fold_number
 
-            image_file = str(case_dir / "img.nii.gz")
-            label_file = str(case_dir / "label.nii.gz")
-            seg_file = str(case_dir / "heart_combined.nii.gz")  # roi segmentation
-            
-            if os.path.exists(image_file) and os.path.exists(label_file):
-                data_files.append({
-                    "image": image_file,
-                    "label": label_file,
-                    "seg": seg_file
-                })
+    def load_data_splits(self, yaml_path, fold_number):
+        # Read the YAML file
+        with open(yaml_path, "r") as file:
+            data = yaml.safe_load(file)
         
-        return data_files
+        # Extract train, val, test splits from the specified fold
+        fold_key = f"fold_{fold_number}"
+        fold = data["cross_validation_splits"][fold_number-1][fold_key]
+        train_split = fold["train"]
+        val_split = fold["val"]
+        test_split = fold["test"]
+
+        # Add folder path to each entry in the splits and create dictionaries
+        base_dir = os.path.dirname(yaml_path)
+        train_split = [
+            {
+                "image": os.path.join(base_dir, entry, "CT.nii.gz"),
+                "label": os.path.join(base_dir, entry, "vf.nii.gz"),
+                "seg": os.path.join(base_dir, entry, "combined_seg.nii.gz"),
+            }
+            for entry in train_split
+        ]
+        val_split = [
+            {
+                "image": os.path.join(base_dir, entry, "CT.nii.gz"),
+                "label": os.path.join(base_dir, entry, "vf.nii.gz"),
+                "seg": os.path.join(base_dir, entry, "combined_seg.nii.gz"),
+            }
+            for entry in val_split
+        ]
+        test_split = [
+            {
+                "image": os.path.join(base_dir, entry, "CT.nii.gz"),
+                "label": os.path.join(base_dir, entry, "vf.nii.gz"),
+                "seg": os.path.join(base_dir, entry, "combined_seg.nii.gz"),
+            }
+            for entry in test_split
+        ]
+        print(f"Loaded data splits from {yaml_path} for fold {fold_number}")
+
+        return train_split, val_split, test_split
 
     def prepare_data(self):
         transforms = [
@@ -114,8 +138,8 @@ class CoronaryArteryDataModule(pl.LightningDataModule):
             Orientationd(keys=["image", "label", "seg"], axcodes="RAS"),
             ScaleIntensityRanged(
                 keys=["image"],
-                a_min=-150,
-                a_max=550,
+                a_min=-200,
+                a_max=100,
                 b_min=0.0,
                 b_max=1.0,
                 clip=True,
@@ -167,8 +191,8 @@ class CoronaryArteryDataModule(pl.LightningDataModule):
             Orientationd(keys=["image", "label", "seg"], axcodes="RAS"),
             ScaleIntensityRanged(
                 keys=["image"],
-                a_min=-150,
-                a_max=550,
+                a_min=-200,
+                a_max=100,
                 b_min=0.0,
                 b_max=1.0,
                 clip=True,
@@ -190,9 +214,10 @@ class CoronaryArteryDataModule(pl.LightningDataModule):
         self.val_transforms = Compose(val_transforms)
 
     def setup(self, stage=None):
-        train_files = self.load_data_splits("train")
-        val_files = self.load_data_splits("valid")
-        test_files = self.load_data_splits("test")
+        train_files, val_files, test_files = self.load_data_splits(
+            yaml_path="data/KU-PET-CT/data_splits.yaml", 
+            fold_number=self.fold_number
+        )
 
         print(f"Found {len(train_files)} training cases")
         print(f"Found {len(val_files)} validation cases")

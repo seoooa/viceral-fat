@@ -27,7 +27,7 @@ from pathlib import Path
 import csv
 from dvclive.lightning import DVCLiveLogger
 
-from src.data.proposed_dataloader import CoronaryArteryDataModule
+from src.data.proposed_dataloader import ViceralFatDataModule
 from src.models.proposed_networks import NetworkFactory
 from src.losses.losses import LossFactory
 from src.metrics.metrics import MetricFactory
@@ -37,7 +37,7 @@ def print_monai_config():
     if local_rank == 0:
         print_config()
 
-class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
+class ViceralFatSegmentModel(pytorch_lightning.LightningModule):
     """Proposed model"""
 
     def __init__(
@@ -47,8 +47,11 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
         batch_size=1,
         lr=1e-3,
         patch_size=(96, 96, 96),
+        fold_number=1,
     ):
         super().__init__()
+
+        self.fold_number = fold_number
 
         self._model = NetworkFactory.create_network(arch_name, patch_size)
         self.loss_function = LossFactory.create_loss(loss_fn)
@@ -59,20 +62,7 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
         self.post_label = Compose(
             [EnsureType("tensor", device="cpu"), AsDiscrete(to_onehot=2)]
         )
-        # self.dice_metric = DiceMetric(
-        #     include_background=False, reduction="mean", get_not_nans=False
-        # )
-        # self.hausdorff_metric = HausdorffDistanceMetric(
-        #     include_background=False, percentile=95, reduction="mean"
-        # )
 
-        # self.hausdorff_metric = HausdorffDistanceMetric(
-        #     include_background=False, 
-        #     percentile=85,
-        #     directed=False,
-        #     reduction="mean"
-        # )
-        # self.mean_iou_metric = MeanIoU(include_background=False, reduction="mean")
         self.best_val_dice = 0
         self.best_val_epoch = 0
         self.validation_step_outputs = []
@@ -133,31 +123,6 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
         outputs = [self.post_pred(i) for i in decollate_batch(outputs)]
         labels = [self.post_label(i) for i in decollate_batch(labels)]
 
-        # self.dice_metric(y_pred=outputs, y=labels)
-        # self.hausdorff_metric(y_pred=outputs, y=labels)
-        # self.mean_iou_metric(y_pred=outputs, y=labels)
-
-        # Hausdorff
-        # try:
-        #     # 1. downsampling
-        #     # original size is 96x96x96
-        #     # resize to 60x60x60
-        #     resize_transform = Resize(
-        #         spatial_size=[60, 60, 60],
-        #         mode="nearest"
-        #     )
-            
-        #     downsampled_outputs = [resize_transform(i) for i in outputs]
-        #     downsampled_labels = [resize_transform(i) for i in labels]
-            
-        #     # 2. each processing
-        #     for idx in range(len(downsampled_outputs)):
-        #         self.hausdorff_metric(
-        #             y_pred=downsampled_outputs[idx].unsqueeze(0),
-        #             y=downsampled_labels[idx].unsqueeze(0)
-        #         )
-        # except Exception as e:
-        #     print(f"[ERROR] Hausdorff metric calculation error in validation step: {e}")
         MetricFactory.calculate_metrics(self.metrics, outputs, labels)
         
         d = {"val_loss": loss, "val_number": len(outputs)}
@@ -222,21 +187,21 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
         # Save inputs as NIfTI
         inputs_nifti = nib.Nifti1Image(
             inputs_np,
-            np.array([[0.35, 0, 0, 0], [0, 0.35, 0, 0], [0, 0, 0.5, 0], [0, 0, 0, 1]]),
+            np.array([[0.98, 0, 0, 0], [0, 0.98, 0, 0], [0, 0, 2.79, 0], [0, 0, 0, 1]]),
         )
         nib.save(inputs_nifti, save_folder / f"{filename_prefix}_inputs.nii.gz")
 
         # Save outputs as NIfTI
         outputs_nifti = nib.Nifti1Image(
             outputs_np,
-            np.array([[0.35, 0, 0, 0], [0, 0.35, 0, 0], [0, 0, 0.5, 0], [0, 0, 0, 1]]),
+            np.array([[0.98, 0, 0, 0], [0, 0.98, 0, 0], [0, 0, 2.79, 0], [0, 0, 0, 1]]),
         )
         nib.save(outputs_nifti, save_folder / f"{filename_prefix}_outputs.nii.gz")
 
         # Save labels as NIfTI
         labels_nifti = nib.Nifti1Image(
             labels_np,
-            np.array([[0.35, 0, 0, 0], [0, 0.35, 0, 0], [0, 0, 0.5, 0], [0, 0, 0, 1]]),
+            np.array([[0.98, 0, 0, 0], [0, 0.98, 0, 0], [0, 0, 2.79, 0], [0, 0, 0, 1]]),
         )
         nib.save(labels_nifti, save_folder / f"{filename_prefix}_labels.nii.gz")
 
@@ -269,7 +234,7 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
         labels = [self.post_label(i) for i in decollate_batch(labels)]
 
         filename = batch["image"].meta["filename_or_obj"][0]
-        patient_id = filename.split("/")[-2]  # Gets patient id (ex. 25) from the path
+        patient_id = filename.split("\\")[-2]  # Gets patient id (ex. 00293921) from the path
 
         # Save result
         self.save_result(
@@ -386,7 +351,7 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
 @click.command()
 @click.option(
     "--arch_name",
-    type=click.Choice(["UNet", "SegResNet", "UNETR", "SwinUNETR"]),
+    type=click.Choice(["SegResNet", "UNETR", "SwinUNETR"]),
     default="UNETR",
     help="Choose the architecture name for the model.",
 )
@@ -423,6 +388,9 @@ class CoronaryArterySegmentModel(pytorch_lightning.LightningModule):
     default="segMap",
     help="Choose the guide for training.",
 )
+@click.option(
+    "--fold_number", type=int, default=1, help="Specify the fold number for training. (ex. 1, 2, 3, 4, 5)"
+)
 def main(
     arch_name,
     loss_fn,
@@ -431,6 +399,7 @@ def main(
     gpu_number,
     checkpoint_path,
     guide,
+    fold_number
 ):
     # NCCL communication
     os.environ["NCCL_IB_DISABLE"] = "1"
@@ -443,7 +412,7 @@ def main(
     print_monai_config()
 
     # set up loggers and checkpoints
-    log_dir = f"result/proposed_{arch_name}" + ("_distanceMap" if guide == "distanceMap" else "")
+    log_dir = f"result/proposed_{arch_name}" + ("_dstMap" if guide == "distanceMap" else "_segMap") + f"/fold_{fold_number}"
     os.makedirs(log_dir, exist_ok=True)
 
     # GPU Setting
@@ -475,19 +444,20 @@ def main(
         accumulate_grad_batches=5,
         precision="bf16-mixed",
         check_val_every_n_epoch=check_val_every_n_epoch,
-        num_sanity_val_steps=1,
+        num_sanity_val_steps=0,
         callbacks=callbacks,
         default_root_dir=log_dir,
     )
 
     # Initialize data module
-    data_module = CoronaryArteryDataModule(
-        data_dir="data/imageCAS_heart",
+    data_module = ViceralFatDataModule(
+        data_dir="data/KU-PET-CT",
         batch_size=1,
         patch_size=(96, 96, 96),
-        num_workers=4,
-        cache_rate=0,
+        num_workers=1,
+        cache_rate=0.0,
         use_distance_map=guide == "distanceMap",
+        fold_number=fold_number
     )
     data_module.prepare_data()
 
@@ -499,11 +469,12 @@ def main(
         if "final_model.ckpt" in checkpoint_filename:
             # start test mode if final epoch checkpoint
             print("Loading final model for testing...")
-            model = CoronaryArterySegmentModel.load_from_checkpoint(
+            model = ViceralFatSegmentModel.load_from_checkpoint(
                 checkpoint_path,
                 arch_name=arch_name,
                 loss_fn=loss_fn,
-                batch_size=1
+                batch_size=1,
+                fold_number=fold_number
             )
             model.result_folder = Path(log_dir)  # Set result folder path
             
@@ -513,10 +484,11 @@ def main(
         elif "epoch=" in checkpoint_filename:
             # resume training if intermediate epoch checkpoint
             print("Resuming training from checkpoint...")
-            model = CoronaryArterySegmentModel(
+            model = ViceralFatSegmentModel(
                 arch_name=arch_name,
                 loss_fn=loss_fn,
-                batch_size=1
+                batch_size=1,
+                fold_number=fold_number
             )
             model.result_folder = Path(log_dir)  # Set result folder path
             
@@ -528,18 +500,24 @@ def main(
         else:
             # test mode if unknown checkpoint format
             print("Unknown checkpoint format, using for testing...")
-            model = CoronaryArterySegmentModel.load_from_checkpoint(
+            model = ViceralFatSegmentModel.load_from_checkpoint(
                 checkpoint_path,
                 arch_name=arch_name,
                 loss_fn=loss_fn,
-                batch_size=1
+                batch_size=1,
+                fold_number=fold_number
             )
             model.result_folder = Path(log_dir)  # Set result folder path
             
             trainer.test(model=model, datamodule=data_module)
     else:
         # Initialize model for training
-        model = CoronaryArterySegmentModel(arch_name=arch_name, loss_fn=loss_fn, batch_size=1)
+        model = ViceralFatSegmentModel(
+            arch_name=arch_name, 
+            loss_fn=loss_fn, 
+            batch_size=1, 
+            fold_number=fold_number
+        )
         model.result_folder = Path(log_dir)  # Set result folder path
 
         # Train the model

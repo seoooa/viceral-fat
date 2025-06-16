@@ -27,6 +27,7 @@ import nibabel as nib
 from pathlib import Path
 import csv
 from dvclive.lightning import DVCLiveLogger
+
 from src.data.dataloader import ViceralFatDataModule
 from src.models.networks import NetworkFactory
 from src.losses.losses import LossFactory
@@ -352,7 +353,7 @@ class ViceralFatSegmentModel(pytorch_lightning.LightningModule):
 )
 @click.option(
     "--fold_number", type=int, default=1, help="Specify the fold number for training. (ex. 1, 2, 3, 4, 5)"
-    )
+)
 def main(
     arch_name,
     loss_fn,
@@ -380,7 +381,7 @@ def main(
     if "," in str(gpu_number):
         # Multiple GPUs
         devices = [int(gpu) for gpu in str(gpu_number).split(",")]
-        strategy = "ddp"
+        strategy = "ddp_find_unused_parameters_true"
     else:
         # Single GPU
         devices = [int(gpu_number)]
@@ -405,7 +406,7 @@ def main(
         accumulate_grad_batches=5,
         precision="bf16-mixed",
         check_val_every_n_epoch=check_val_every_n_epoch,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=1,
         callbacks=callbacks,
         default_root_dir=log_dir,
     )
